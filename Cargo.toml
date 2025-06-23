@@ -1,0 +1,8 @@
+[package]
+name = "minimal_failing_example"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+debian-packaging = { version = "0.18.0", default-features = false }
+tokio = { version = "1.45.1", features = ["full"] }
