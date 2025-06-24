@@ -1,9 +1,46 @@
-use std::fs;
+use std::{collections::HashMap, fs, pin::Pin};
 
-use debian_packaging::repository::{
-    builder::{InMemoryDebFile, NO_SIGNING_KEY, RepositoryBuilder},
-    filesystem::{FilesystemRepositoryReader, FilesystemRepositoryWriter},
+use async_trait::async_trait;
+use debian_packaging::{
+    io::DataResolver,
+    repository::{
+        builder::{InMemoryDebFile, NO_SIGNING_KEY, RepositoryBuilder},
+        filesystem::FilesystemRepositoryWriter,
+    },
 };
+use futures::AsyncRead;
+
+struct Resolver {
+    pub packages: HashMap<String, Vec<u8>>,
+}
+
+impl Resolver {
+    fn new() -> Resolver {
+        Resolver {
+            packages: HashMap::new(),
+        }
+    }
+
+    fn add_package(&mut self, path: String, package: Vec<u8>) {
+        // HACK: This should be handled gracefully
+        let _ = self.packages.insert(path, package);
+    }
+}
+
+#[async_trait]
+impl DataResolver for Resolver {
+    async fn get_path(
+        &self,
+        path: &str,
+    ) -> debian_packaging::error::Result<Pin<Box<dyn AsyncRead + Send>>> {
+        Ok(Box::pin(futures::io::Cursor::new(
+            self.packages
+                .get(path)
+                .expect("There should be the file")
+                .clone(),
+        )))
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -26,13 +63,15 @@ async fn main() {
 
     println!("Will be written to {path}");
 
-    let reader = FilesystemRepositoryReader::new("./apt_repo");
+    let mut resolver = Resolver::new();
+    resolver.add_package(path, data);
+
     let writer = FilesystemRepositoryWriter::new("./apt_repo");
 
     match builder
         .publish(
             &writer,
-            &reader,
+            &resolver,
             "bookworm",
             8,
             &Some(|event| eprintln!("{event}")),
